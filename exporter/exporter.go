@@ -203,12 +203,27 @@ func (e *Exporter) handleResponse(uri string) ([]byte, error) {
 		return nil, fmt.Errorf("Status %s (%d): %s", resp.Status, resp.StatusCode, data)
 	}
 
+	if strings.Contains(uri, "system.metrics") || strings.Contains(uri, "system.events") {
+		data = DataFix(data)
+	}
 	return data, nil
 }
 
 type lineResult struct {
 	key   string
 	value int
+}
+
+func DataFix(data []byte) []byte {
+	datastr := string(data)
+	var fixedData string
+	for _, line := range strings.Split(datastr, "\n") {
+		parts := strings.Fields(line)
+		if len(parts) >= 2 {
+			fixedData = fixedData + fmt.Sprintf("%v %v\n", parts[0], parts[1])
+		}
+	}
+	return []byte(fixedData)
 }
 
 func (e *Exporter) parseKeyValueResponse(uri string) ([]lineResult, error) {
@@ -226,9 +241,11 @@ func (e *Exporter) parseKeyValueResponse(uri string) ([]lineResult, error) {
 		if len(parts) == 0 {
 			continue
 		}
+
 		if len(parts) != 2 {
 			return nil, fmt.Errorf("parseKeyValueResponse: unexpected %d line: %s", i, line)
 		}
+
 		k := strings.TrimSpace(parts[0])
 		v, err := strconv.Atoi(strings.TrimSpace(parts[1]))
 		if err != nil {
