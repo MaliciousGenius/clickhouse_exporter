@@ -9,7 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/log"
-	"github.com/username1366/clickhouse_exporter/exporter"
+	"github.com/maliciousgenius/clickhouse_exporter/exporter"
 )
 
 var (

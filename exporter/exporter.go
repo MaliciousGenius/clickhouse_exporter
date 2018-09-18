@@ -26,6 +26,7 @@ type Exporter struct {
 	asyncMetricsURI string
 	eventsURI       string
 	partsURI        string
+	dictURI         string
 	mutex           sync.RWMutex
 	client          *http.Client
 
@@ -53,6 +54,10 @@ func NewExporter(uri url.URL, insecure bool, user, password string) *Exporter {
 	q.Set("query", "select * from system.events")
 	eventsURI.RawQuery = q.Encode()
 
+	dictURI := uri
+	q.Set("query", "select name, count(last_exception) AS exception FROM system.dictionaries where last_exception != '' group by name;")
+	dictURI.RawQuery = q.Encode()
+
 	partsURI := uri
 	q.Set("query", "select database, table, sum(bytes) as bytes, count() as parts, sum(rows) as rows from system.parts where active = 1 group by database, table")
 	partsURI.RawQuery = q.Encode()
@@ -61,6 +66,7 @@ func NewExporter(uri url.URL, insecure bool, user, password string) *Exporter {
 		metricsURI:      metricsURI.String(),
 		asyncMetricsURI: asyncMetricsURI.String(),
 		eventsURI:       eventsURI.String(),
+		dictURI:         dictURI.String(),
 		partsURI:        partsURI.String(),
 		scrapeFailures: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
@@ -146,6 +152,20 @@ func (e *Exporter) collect(ch chan<- prometheus.Metric) error {
 		ch <- newMetric
 	}
 
+	dict, err := e.parseKeyValueResponse(e.dictURI)
+	if err != nil {
+		return fmt.Errorf("Error scraping clickhouse url %v: %v", e.dictURI, err)
+	}
+
+	for _, ev := range dict {
+		newMetric, _ := prometheus.NewConstMetric(
+			prometheus.NewDesc(
+				namespace+"_"+metricName(ev.key)+"_total",
+				"Dictionary of "+ev.key+" processed load error", []string{}, nil),
+			prometheus.CounterValue, float64(ev.value))
+		ch <- newMetric
+	}
+
 	parts, err := e.parsePartsResponse(e.partsURI)
 	if err != nil {
 		return fmt.Errorf("Error scraping clickhouse url %v: %v", e.partsURI, err)
@@ -203,7 +223,7 @@ func (e *Exporter) handleResponse(uri string) ([]byte, error) {
 		return nil, fmt.Errorf("Status %s (%d): %s", resp.Status, resp.StatusCode, data)
 	}
 
-	if strings.Contains(uri, "system.metrics") || strings.Contains(uri, "system.events") {
+	if strings.Contains(uri, "system.metrics") || strings.Contains(uri, "system.events") || strings.Contains(uri, "system.dictionaries") {
 		data = DataFix(data)
 	}
 	return data, nil
